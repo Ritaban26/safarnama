@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Safarnama (ghibili) ✈
 
-## Getting Started
+A painted travel journal — the private magazine of a circle of friends, with a curated
+public face. This is the full-stack successor to the hand-rolled
+[`travel-archives`](../travel-archives) learning project: same database, same Supabase
+storage, same rules — now living inside a Next.js App Router app with the Ghibli-inspired
+design system from `design-system/MASTER.md`.
 
-First, run the development server:
+## What it does
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Public face** — home, journeys atlas, per-trip curated galleries, and the journal.
+  Only media the editor approved (`is_public`) ever appears here.
+- **Passport-control login** — session cookie (HMAC-signed, httpOnly) + bcrypt-hashed
+  passwords. No signup; membership is by invitation, inserted by hand.
+- **The private archive** (`/archive`) — every trip you were on, all its media,
+  uploads to Supabase Storage, instant delete for your own private uploads.
+- **The approval flow** — publishing, retracting, or deleting public work is a *pitch*:
+  it lands on the editor's desk (`/admin`) and only happens on an explicit yes.
+- **The editor's desk** — pending pitches, circle roster, trips on file, open-a-new-trip.
+
+## Stack
+
+| Layer      | Choice                                                              |
+| ---------- | ------------------------------------------------------------------- |
+| App        | Next.js 16 (App Router, Server Actions, React 19)                   |
+| Database   | PostgreSQL on Supabase, via `pg` pool (shared with travel-archives) |
+| Storage    | Supabase Storage bucket `Travel_archives`                           |
+| Auth       | Hand-rolled: `bcryptjs` + HMAC-signed session cookie                |
+| Validation | Zod in every server action                                          |
+
+## Project structure
+
+```
+src/lib/db.ts        pg Pool (DATABASE_URL)
+src/lib/session.ts   signed session cookie create/read/destroy
+src/lib/auth.ts      getSessionUser · requireUser · requireAdmin
+src/lib/queries.ts   all reads (trips, media, posts, approvals) → domain types
+src/lib/actions.ts   all writes: login/logout, upload, delete, pitch, decide, createTrip
+src/lib/data.ts      shared types + display derivations (initials, tints, painted fallbacks)
+src/app/…            public pages · /login · /archive (members) · /admin (editor)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Running locally
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. `npm install`
+2. Create `.env.local` (same values as travel-archives):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```
+   DATABASE_URL='postgres://…'   # single quotes! Next.js expands $VARS in double-quoted values
+   SESSION_SECRET=any-long-random-string
+   SUPABASE_URL=https://<project>.supabase.co
+   SUPABASE_SERVICE_KEY=…        # service role key (server-side only)
+   ```
 
-## Learn More
+3. `npm run dev`
 
-To learn more about Next.js, take a look at the following resources:
+The schema is the travel-archives schema plus additive columns/tables:
+`trips.slug`, `media.caption`, `approval_requests.note`, and a `posts` table.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Roles
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Role   | Access                                                                |
+| ------ | ---------------------------------------------------------------------- |
+| Admin  | Everything — open trips, decide every pitch, editor's desk             |
+| Member | Upload to their trips, see all trip media, delete own private uploads  |
+| Public | Only editor-approved media and journal posts                           |
 
-## Deploy on Vercel
+## TODO / next steps
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Try a free auth library** instead of the hand-rolled session cookie — good candidates:
+  [Auth.js (next-auth v5)](https://authjs.dev) (free, self-hosted, credentials + OAuth),
+  [Better Auth](https://better-auth.com) (free, TypeScript-first), or
+  [Supabase Auth](https://supabase.com/docs/guides/auth) (already part of the stack, free tier).
+  The hand-rolled version was kept first on purpose — to understand what the libraries do.
+- Media validation & size limits on upload (currently capped only by the 50 MB action body limit).
+- Journal post authoring UI (posts table exists; entries are inserted by hand for now).
+- Real cover photos for trips (covers still use the painted placeholder scenes).
