@@ -1,26 +1,167 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-paper: #f6efdf;
+  --color-paper-deep: #ecdfc3;
+  --color-paper-warm: #f9f4e8;
+  --color-ink: #33291f;
+  --color-ink-soft: #6b5d4b;
+  --color-ink-faint: #9a8b74;
+  --color-moss: #4a6741;
+  --color-moss-deep: #36503a;
+  --color-meadow: #88a868;
+  --color-sky: #86b5c9;
+  --color-dusk: #34506b;
+  --color-dusk-deep: #243a52;
+  --color-ember: #d8702f;
+  --color-ember-deep: #b65820;
+  --color-blossom: #cf8295;
+  --color-gold: #d9a441;
+
+  --font-display: var(--font-cormorant), Georgia, serif;
+  --font-hand: var(--font-caveat), cursive;
+  --font-body: var(--font-karla), "Segoe UI", sans-serif;
+
+  --shadow-painted: 0 2px 6px rgba(51, 41, 31, 0.08), 0 14px 34px -12px rgba(51, 41, 31, 0.22);
+  --shadow-photo: 0 1px 3px rgba(51, 41, 31, 0.12), 0 10px 24px -8px rgba(51, 41, 31, 0.3);
+  --shadow-lift: 0 4px 10px rgba(51, 41, 31, 0.1), 0 24px 48px -16px rgba(51, 41, 31, 0.35);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(216, 112, 47, 0.25);
+}
+
+/* ---- global film grain ---- */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  z-index: 80;
+  opacity: 0.055;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 300px 300px;
+}
+
+/* ---- watercolor wash blobs ---- */
+.wash {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* ---- reveal animations ---- */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 0.9s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+.rise-1 { animation-delay: 0.08s; }
+.rise-2 { animation-delay: 0.18s; }
+.rise-3 { animation-delay: 0.3s; }
+.rise-4 { animation-delay: 0.45s; }
+
+@keyframes drift {
+  from { transform: translateX(-4%); }
+  to { transform: translateX(4%); }
+}
+.drift { animation: drift 26s ease-in-out infinite alternate; }
+.drift-slow { animation: drift 40s ease-in-out infinite alternate-reverse; }
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.floaty { animation: floaty 7s ease-in-out infinite; }
+
+@keyframes flicker {
+  0%, 100% { opacity: 0.85; }
+  42% { opacity: 1; }
+  58% { opacity: 0.7; }
+  74% { opacity: 0.95; }
+}
+.flicker { animation: flicker 4.5s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise, .drift, .drift-slow, .floaty, .flicker {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- taped photo card ---- */
+.photo-card {
+  background: var(--color-paper-warm);
+  padding: 0.6rem 0.6rem 0.9rem;
+  box-shadow: var(--shadow-photo);
+  transition: box-shadow 0.25s ease-out;
+  transform-style: preserve-3d;
+}
+.photo-card:hover {
+  box-shadow: var(--shadow-lift);
+}
+/* subtle photographic vignette + sheen over every painted frame */
+.photo-img::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 28%),
+    radial-gradient(120% 90% at 50% 42%, rgba(20, 24, 36, 0) 60%, rgba(20, 24, 36, 0.22) 100%);
+}
+.tape {
+  position: absolute;
+  top: -0.7rem;
+  left: 50%;
+  width: 5.5rem;
+  height: 1.5rem;
+  transform: translateX(-50%) rotate(-2deg);
+  background: rgba(217, 164, 65, 0.35);
+  border-left: 1px dashed rgba(51, 41, 31, 0.12);
+  border-right: 1px dashed rgba(51, 41, 31, 0.12);
+  backdrop-filter: blur(1px);
+}
+
+/* ---- handwritten underline flourish ---- */
+.flourish {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='10' viewBox='0 0 220 10'%3E%3Cpath d='M3 7 Q 55 1 110 5 T 217 4' fill='none' stroke='%23d8702f' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: 100% 10px;
+  padding-bottom: 14px;
+}
+
+/* ---- prose for journal entries ---- */
+.journal-prose p {
+  margin-bottom: 1.4em;
+  line-height: 1.75;
+  font-size: 1.075rem;
+  color: var(--color-ink);
+}
+.journal-prose p:first-of-type::first-letter {
+  font-family: var(--font-display);
+  font-size: 4.4em;
+  line-height: 0.78;
+  float: left;
+  padding-right: 0.12em;
+  padding-top: 0.08em;
+  color: var(--color-ember);
 }
