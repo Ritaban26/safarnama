@@ -152,8 +152,8 @@ export default function PrivateTripView({
                     )}
                   </span>
 
-                  {/* hover actions */}
-                  <div className="absolute inset-x-0 bottom-0 flex translate-y-2 items-center justify-center gap-2 bg-gradient-to-t from-ink/70 to-transparent p-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
+                  {/* Actions: always visible on touch (no hover), reveal on hover from sm up */}
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-linear-to-t from-ink/70 to-transparent p-3 transition-all duration-200 sm:translate-y-2 sm:opacity-0 sm:group-hover:translate-y-0 sm:group-hover:opacity-100">
                     {m.url && (
                       <a
                         href={m.url}

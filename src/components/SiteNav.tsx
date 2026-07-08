@@ -42,7 +42,7 @@ export default function SiteNav({ tone = "paper" }: { tone?: "paper" | "dusk" })
         </Link>
         <Link
           href="/journal"
-          className={`hidden rounded-full px-4 py-2 transition-colors sm:block ${
+          className={`rounded-full px-4 py-2 transition-colors ${
             onDusk ? "hover:bg-white/10" : "hover:bg-ink/5"
           }`}
         >

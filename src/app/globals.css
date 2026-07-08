@@ -165,3 +165,96 @@ body {
   padding-top: 0.08em;
   color: var(--color-ember);
 }
+
+/* =====================================================================
+   Smooth-scroll motion system (HANDOFF.md)
+   One damped rAF loop drives per-frame transforms; IntersectionObserver
+   drives one-shot reveals. Signature ease: cubic-bezier(.22,.61,.36,1).
+   ===================================================================== */
+
+/* ---- reveal-on-scroll: hidden base state -> resting via .in ---- */
+.reveal {
+  opacity: 0;
+  transform: translateY(46px);
+  transition:
+    opacity 1s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 1s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+.reveal.d1 { transition-delay: 0.12s; }
+.reveal.d2 { transition-delay: 0.24s; }
+.reveal.d3 { transition-delay: 0.36s; }
+.reveal.d4 { transition-delay: 0.48s; }
+
+/* ---- hero: sticky 100vh stage inside a tall scroll runway ---- */
+.hero-wrap {
+  position: relative;
+  height: 170vh;
+}
+.hero-sticky {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+}
+
+/* ---- pinned circle card: tall runway, sticky centred frame ---- */
+.circle-wrap {
+  position: relative;
+  height: 180vh;
+}
+.circle-sticky {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* ---- will-change only on per-frame transformed layers ---- */
+[data-hero-copy],
+[data-hero-sun],
+[data-hero-cloud],
+[data-hero-stage],
+[data-parallax],
+[data-strip-hill],
+[data-strip-cloud],
+[data-circle-card] {
+  will-change: transform;
+}
+[data-hero-copy] { will-change: transform, opacity; }
+
+/* ---- hand-drawn underline: strokes on when its .reveal gets .in ---- */
+.underline-wrap path {
+  stroke-dasharray: var(--len, 320);
+  stroke-dashoffset: var(--len, 320);
+  transition: stroke-dashoffset 1.2s cubic-bezier(0.22, 0.61, 0.36, 1) 0.3s;
+}
+.in .underline-wrap path {
+  stroke-dashoffset: 0;
+}
+
+/* ---- drifting soot sprites (idle decoration; WAAPI-animated in JS) ---- */
+.soot {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 34%, #423422 0%, #1c150d 70%);
+  box-shadow: 0 0 10px rgba(20, 15, 8, 0.5);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .underline-wrap path {
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+}
