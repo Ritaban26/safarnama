@@ -45,6 +45,39 @@ export async function logout(): Promise<void> {
   redirect("/");
 }
 
+/* ---------------- members ---------------- */
+
+const createMemberSchema = z.object({
+  name: z.string().trim().min(2, "Give them a name"),
+  email: z.string().trim().toLowerCase().email("Enter a valid email"),
+  password: z.string().min(8, "At least 8 characters"),
+});
+
+export async function createMember(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getSessionUser();
+  if (user?.role !== "admin") return { error: "Only the editor adds members." };
+
+  const parsed = createMemberSchema.safeParse({
+    name: formData.get("name"),
+    email: formData.get("email"),
+    password: formData.get("password"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const dupe = await pool.query("SELECT 1 FROM users WHERE lower(email) = $1", [parsed.data.email]);
+  if (dupe.rows[0]) return { error: "Someone already uses that email." };
+
+  // role is fixed to 'member' — the DB enforces exactly one admin, and the form never offers it
+  const hash = await bcrypt.hash(parsed.data.password, 10);
+  await pool.query(
+    "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, 'member')",
+    [parsed.data.name, parsed.data.email, hash],
+  );
+  revalidatePath("/admin");
+  revalidatePath("/archive");
+  return {};
+}
+
 /* ---------------- uploads ---------------- */
 
 async function requireMembership(tripSlug: string) {

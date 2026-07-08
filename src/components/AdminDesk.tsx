@@ -6,7 +6,7 @@ import PaintedScene from "@/components/PaintedScene";
 import { MediaFrame } from "@/components/PhotoCard";
 import { Badge, Avatar } from "@/components/ui";
 import { IconCheck, IconX, IconGlobe, IconLock, IconTrash, IconClock, IconCamera } from "@/components/icons";
-import { decideApproval, createTrip, updateTrip, type ActionState } from "@/lib/actions";
+import { decideApproval, createTrip, updateTrip, createMember, type ActionState } from "@/lib/actions";
 import {
   approvalLabel,
   type ApprovalRequest,
@@ -77,7 +77,7 @@ export default function AdminDesk({
       )}
 
       {/* stats */}
-      <section className="mt-10 grid gap-5 sm:grid-cols-4">
+      <section className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-5">
         <Stat label="Pending pitches" value={requests.length} accent="text-ember" />
         <Stat label="Memories archived" value={mediaTotal} accent="text-moss-deep" />
         <Stat label="Public frames" value={publicTotal} accent="text-dusk" />
@@ -175,9 +175,7 @@ export default function AdminDesk({
               </li>
             ))}
           </ul>
-          <p className="mt-4 px-2 font-hand text-lg text-ink-soft">
-            v1: new members are added by hand, like signatures in a guestbook.
-          </p>
+          <AddMemberForm />
         </section>
 
         {/* trips overview */}
@@ -302,6 +300,75 @@ function NewTripForm({ users }: { users: User[] }) {
           className="cursor-pointer rounded-full bg-moss px-6 py-2.5 font-semibold text-paper transition-colors hover:bg-moss-deep disabled:opacity-60"
         >
           {pending ? "Opening…" : "Open trip"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="cursor-pointer rounded-full border border-ink/20 px-6 py-2.5 font-semibold text-ink-soft transition-colors hover:border-ember hover:text-ember"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AddMemberForm() {
+  const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
+  const [state, action, pending] = useActionState(
+    async (prev: ActionState, formData: FormData) => {
+      const res = await createMember(prev, formData);
+      return res;
+    },
+    {} as ActionState,
+  );
+
+  useEffect(() => {
+    if (!pending && state.error === undefined && formRef.current?.dataset.submitted) {
+      formRef.current.reset();
+      formRef.current.dataset.submitted = "";
+      setOpen(false);
+      router.refresh();
+    }
+  }, [pending, state, router]);
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-6 w-full cursor-pointer rounded-3xl border-2 border-dashed border-ink/20 py-5 font-semibold text-ink-soft transition-colors hover:border-ember/50 hover:text-ember-deep"
+      >
+        + Add a member to the circle
+      </button>
+    );
+  }
+
+  return (
+    <form
+      ref={formRef}
+      action={action}
+      onSubmit={() => {
+        if (formRef.current) formRef.current.dataset.submitted = "1";
+      }}
+      className="mt-6 space-y-4 rounded-3xl border border-ink/10 bg-paper-warm p-6 shadow-painted"
+    >
+      <h3 className="font-display text-2xl font-semibold">Add a member</h3>
+      {state.error && <p className="text-sm font-semibold text-ember-deep">{state.error}</p>}
+      <Field name="name" label="Name" placeholder="Rahul Sharma" required />
+      <Field name="email" label="Email" type="email" placeholder="rahul@thecircle.in" required />
+      <Field name="password" label="Starting password" type="password" placeholder="at least 8 characters" required />
+      <p className="font-hand text-base text-ink-soft">
+        Share this with them — they can change it later from their settings.
+      </p>
+      <div className="flex gap-3">
+        <button
+          type="submit"
+          disabled={pending}
+          className="cursor-pointer rounded-full bg-moss px-6 py-2.5 font-semibold text-paper transition-colors hover:bg-moss-deep disabled:opacity-60"
+        >
+          {pending ? "Adding…" : "Add to the circle"}
         </button>
         <button
           type="button"
@@ -454,9 +521,9 @@ function Field({
 
 function Stat({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
-    <div className="rounded-3xl border border-ink/10 bg-paper-warm px-6 py-5 shadow-painted">
-      <p className={`font-display text-4xl font-semibold ${accent}`}>{value}</p>
-      <p className="mt-1 text-sm font-semibold uppercase tracking-[0.14em] text-ink-faint">{label}</p>
+    <div className="rounded-2xl border border-ink/10 bg-paper-warm px-4 py-4 shadow-painted sm:rounded-3xl sm:px-6 sm:py-5">
+      <p className={`font-display text-3xl font-semibold sm:text-4xl ${accent}`}>{value}</p>
+      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-faint sm:text-sm">{label}</p>
     </div>
   );
 }
