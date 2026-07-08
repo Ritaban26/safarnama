@@ -17,7 +17,7 @@ export default function SiteFooter() {
           />
         ))}
       </div>
-      <div className="relative mx-auto grid max-w-6xl gap-10 px-6 py-16 sm:grid-cols-[1.4fr_1fr_1fr]">
+      <div className="relative mx-auto grid max-w-6xl gap-10 px-6 py-16 sm:grid-cols-[1.4fr_1fr]">
         <div>
           <div className="flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-ember text-paper">
@@ -38,13 +38,6 @@ export default function SiteFooter() {
           <ul className="mt-4 space-y-2.5 text-paper/65">
             <li><Link href="/trips" className="transition-colors hover:text-gold">All journeys</Link></li>
             <li><Link href="/journal" className="transition-colors hover:text-gold">The journal</Link></li>
-          </ul>
-        </div>
-        <div>
-          <h3 className="font-display text-lg font-semibold text-paper/90">The circle</h3>
-          <ul className="mt-4 space-y-2.5 text-paper/65">
-            <li><Link href="/archive" className="transition-colors hover:text-gold">Private archive</Link></li>
-            <li><Link href="/admin" className="transition-colors hover:text-gold">Editor&apos;s desk</Link></li>
           </ul>
         </div>
       </div>

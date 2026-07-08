@@ -36,7 +36,7 @@ export async function login(_prev: ActionState, formData: FormData): Promise<Act
   if (!user || !(await bcrypt.compare(parsed.data.password, user.password_hash))) {
     return { error: "The circle doesn't recognise those credentials." };
   }
-  await createSession(user.id);
+  await createSession(user.id, user.password_hash);
   redirect("/archive");
 }
 
@@ -73,7 +73,7 @@ export async function createMember(_prev: ActionState, formData: FormData): Prom
     "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, 'member')",
     [parsed.data.name, parsed.data.email, hash],
   );
-  revalidatePath("/admin");
+  revalidatePath("/archive/desk");
   revalidatePath("/archive");
   return {};
 }
@@ -99,10 +99,42 @@ export async function changePassword(_prev: ActionState, formData: FormData): Pr
   }
   const hash = await bcrypt.hash(parsed.data.newPassword, 10);
   await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [hash, Number(user.id)]);
+  // Re-issue the cookie with the new token-version so this session stays
+  // logged in while every other (now stale) cookie for this user is rejected.
+  await createSession(Number(user.id), hash);
   return {};
 }
 
 /* ---------------- uploads ---------------- */
+
+// Sniffs file magic bytes so storage decisions never trust the client-supplied
+// filename or MIME type (both are attacker-controlled).
+type SniffedType = { mediaType: "image" | "video"; contentType: string; extension: string };
+
+function sniffMediaType(buf: Buffer): SniffedType | null {
+  const has = (offset: number, bytes: number[]) =>
+    buf.length >= offset + bytes.length && bytes.every((b, i) => buf[offset + i] === b);
+
+  if (has(0, [0xff, 0xd8, 0xff])) return { mediaType: "image", contentType: "image/jpeg", extension: "jpg" };
+  if (has(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    return { mediaType: "image", contentType: "image/png", extension: "png" };
+  if (has(0, [0x47, 0x49, 0x46, 0x38])) return { mediaType: "image", contentType: "image/gif", extension: "gif" };
+  if (has(0, [0x52, 0x49, 0x46, 0x46]) && has(8, [0x57, 0x45, 0x42, 0x50]))
+    return { mediaType: "image", contentType: "image/webp", extension: "webp" };
+  if (has(4, [0x66, 0x74, 0x79, 0x70])) {
+    // ISO base media container (ftyp box): brand at offset 8 distinguishes HEIC/HEIF from MP4/MOV
+    const brand = buf.subarray(8, 12).toString("ascii");
+    if (["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(brand)) {
+      return { mediaType: "image", contentType: "image/heic", extension: "heic" };
+    }
+    return { mediaType: "video", contentType: "video/mp4", extension: "mp4" };
+  }
+  if (has(0, [0x1a, 0x45, 0xdf, 0xa3])) {
+    // EBML header covers both WebM and Matroska; treat both as webm for storage purposes
+    return { mediaType: "video", contentType: "video/webm", extension: "webm" };
+  }
+  return null;
+}
 
 async function requireMembership(tripSlug: string) {
   const user = await getSessionUser();
@@ -124,21 +156,24 @@ export async function uploadMedia(tripSlug: string, formData: FormData): Promise
   if (files.length === 0) return { error: "Pick at least one photo or video." };
 
   for (const file of files) {
-    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const sniffed = sniffMediaType(buffer);
+    if (!sniffed) {
       return { error: `"${file.name}" is not a photo or video.` };
     }
-    const fileName = `${Date.now()}-${file.name}`;
+    // server-generated key: never derive storage paths from the client-supplied filename
+    const fileName = `${crypto.randomUUID()}.${sniffed.extension}`;
     const { error } = await supabase.storage
       .from(MEDIA_BUCKET)
-      .upload(fileName, Buffer.from(await file.arrayBuffer()), { contentType: file.type });
+      .upload(fileName, buffer, { contentType: sniffed.contentType });
     if (error) return { error: "Upload failed — try again." };
 
     const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(fileName);
-    const mediaType = file.type.startsWith("image/") ? "photo" : "video";
+    const mediaType = sniffed.mediaType === "image" ? "photo" : "video";
     await pool.query(
-      `INSERT INTO media (media_url, media_type, trip_id, uploaded_by, is_public, caption)
-       VALUES ($1, $2, $3, $4, false, $5)`,
-      [data.publicUrl, mediaType, tripId, Number(user.id), caption],
+      `INSERT INTO media (media_url, media_type, trip_id, uploaded_by, is_public, caption, storage_key)
+       VALUES ($1, $2, $3, $4, false, $5, $6)`,
+      [data.publicUrl, mediaType, tripId, Number(user.id), caption, fileName],
     );
   }
   revalidatePath(`/archive/${tripSlug}`);
@@ -147,12 +182,18 @@ export async function uploadMedia(tripSlug: string, formData: FormData): Promise
 
 /* ---------------- media lifecycle ---------------- */
 
-async function storageRemove(mediaUrl: string | null) {
-  const marker = `/object/public/${MEDIA_BUCKET}/`;
-  const idx = mediaUrl?.indexOf(marker) ?? -1;
-  if (mediaUrl && idx !== -1) {
+async function storageRemove(mediaUrl: string | null, storageKey: string | null = null) {
+  // Prefer the recorded object key; fall back to parsing it out of the legacy
+  // public URL for rows uploaded before storage_key existed.
+  let key = storageKey;
+  if (!key) {
+    const marker = `/object/public/${MEDIA_BUCKET}/`;
+    const idx = mediaUrl?.indexOf(marker) ?? -1;
+    if (mediaUrl && idx !== -1) key = decodeURIComponent(mediaUrl.slice(idx + marker.length));
+  }
+  if (key) {
     // best-effort; a dangling object is not worth failing the request over
-    await supabase.storage.from(MEDIA_BUCKET).remove([decodeURIComponent(mediaUrl.slice(idx + marker.length))]);
+    await supabase.storage.from(MEDIA_BUCKET).remove([key]);
   }
 }
 
@@ -160,7 +201,7 @@ export async function deletePrivateMedia(mediaId: string): Promise<ActionState> 
   const user = await getSessionUser();
   if (!user) return { error: "Not signed in" };
   const r = await pool.query(
-    "SELECT media_url, trip_id FROM media WHERE id = $1 AND uploaded_by = $2 AND NOT is_public",
+    "SELECT media_url, storage_key, trip_id FROM media WHERE id = $1 AND uploaded_by = $2 AND NOT is_public",
     [Number(mediaId), Number(user.id)],
   );
   if (!r.rows[0]) return { error: "Only your own private uploads can be deleted directly." };
@@ -168,7 +209,7 @@ export async function deletePrivateMedia(mediaId: string): Promise<ActionState> 
   await pool.query("UPDATE posts SET media_id = NULL WHERE media_id = $1", [Number(mediaId)]);
   await pool.query("DELETE FROM approval_requests WHERE media_id = $1", [Number(mediaId)]);
   await pool.query("DELETE FROM media WHERE id = $1", [Number(mediaId)]);
-  await storageRemove(r.rows[0].media_url);
+  await storageRemove(r.rows[0].media_url, r.rows[0].storage_key);
   revalidatePath("/archive");
   return {};
 }
@@ -189,9 +230,10 @@ export async function requestApproval(
     Number(mediaId),
   ]);
   if (!m.rows[0]) {
-    return { error: "You can only pitch your own uploads." };
+    return { error: "That memory no longer exists." };
   }
   if (parsedType.data === "make_public") {
+    // domain rule: any trip member may pitch any media in that trip, not just their own uploads
     const membership = await pool.query(
       "SELECT 1 FROM trip_members WHERE trip_id = $1 AND user_id = $2",
       [m.rows[0].trip_id, Number(user.id)],
@@ -215,7 +257,7 @@ export async function requestApproval(
     [Number(mediaId), APPROVAL_TYPE_TO_DB[parsedType.data], Number(user.id), z.string().trim().max(300).catch("").parse(note)],
   );
   revalidatePath("/archive");
-  revalidatePath("/admin");
+  revalidatePath("/archive/desk");
   return {};
 }
 
@@ -239,18 +281,18 @@ export async function decideApproval(
     } else if (req.action_type === APPROVAL_TYPE_TO_DB.retract_public) {
       await pool.query("UPDATE media SET is_public = false WHERE id = $1", [req.media_id]);
     } else if (req.action_type === APPROVAL_TYPE_TO_DB.delete_public) {
-      const m = await pool.query("SELECT media_url FROM media WHERE id = $1", [req.media_id]);
+      const m = await pool.query("SELECT media_url, storage_key FROM media WHERE id = $1", [req.media_id]);
       await pool.query("UPDATE posts SET media_id = NULL WHERE media_id = $1", [req.media_id]);
       await pool.query(
         "UPDATE approval_requests SET status = 'rejected' WHERE media_id = $1 AND status = 'pending' AND id <> $2",
         [req.media_id, req.id],
       );
       await pool.query("DELETE FROM media WHERE id = $1", [req.media_id]);
-      if (m.rows[0]) await storageRemove(m.rows[0].media_url);
+      if (m.rows[0]) await storageRemove(m.rows[0].media_url, m.rows[0].storage_key);
     }
   }
   await pool.query("UPDATE approval_requests SET status = $1 WHERE id = $2", [decision, req.id]);
-  revalidatePath("/admin");
+  revalidatePath("/archive/desk");
   revalidatePath("/archive");
   revalidatePath("/");
   return {};
@@ -264,7 +306,12 @@ const tripSchema = z.object({
   startDate: z.string().trim().min(1, "Start date required"),
   endDate: z.string().trim().min(1, "End date required"),
   description: z.string().trim().max(1000).catch(""),
-});
+}).refine(
+  (data) => !["desk", "settings"].includes(
+    data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
+  ),
+  { message: "That trip name collides with a reserved page — pick another.", path: ["name"] },
+);
 
 export async function createTrip(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getSessionUser();
@@ -296,7 +343,7 @@ export async function createTrip(_prev: ActionState, formData: FormData): Promis
       inserted.rows[0].id, id,
     ]);
   }
-  revalidatePath("/admin");
+  revalidatePath("/archive/desk");
   revalidatePath("/archive");
   revalidatePath("/trips");
   return {};
@@ -342,7 +389,7 @@ export async function updateTrip(_prev: ActionState, formData: FormData): Promis
     );
   }
 
-  revalidatePath("/admin");
+  revalidatePath("/archive/desk");
   revalidatePath("/archive");
   revalidatePath("/trips");
   return {};

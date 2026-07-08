@@ -20,7 +20,7 @@ All backend logic lives in `src/lib` — there are no API routes:
 
 - `db.ts` — pg Pool (globalThis-cached for dev HMR)
 - `session.ts` — HMAC-signed httpOnly cookie sessions (hand-rolled on purpose; do not swap in an auth library unasked)
-- `auth.ts` — `getSessionUser` / `requireUser` / `requireAdmin` (redirect guards; pages call these, there is no middleware/proxy)
+- `auth.ts` — `getSessionUser` / `requireUser` / `requireAdmin` (redirect guards; pages call these — `src/proxy.ts` is a defense-in-depth redirect for `/archive/:path*` only, optimistic and not a substitute for these checks)
 - `queries.ts` — all reads, mapping DB rows → domain types in `data.ts`
 - `actions.ts` — all writes as Server Actions, every one Zod-validated and auth-checked internally
 - `data.ts` — shared types + pure display derivations; safe for client components (queries/auth/storage are `server-only`)
@@ -34,6 +34,19 @@ The Postgres DB and `Travel_archives` storage bucket are **shared with the separ
 - No migration tool — run one-off scripts: `node --env-file=.env.local script.js` using the project's own `node_modules/pg`
 - `approval_requests.action_type` has a check constraint with prose values ("mark as public", …); always map through `APPROVAL_TYPE_TO_DB` in `queries.ts`
 - Never create test users/rows without deleting them afterwards
+
+### Storage privacy flip (pending)
+
+The `Travel_archives` bucket is still **public**. `media.storage_key` now records each
+upload's raw object key, and `queries.ts` already serves ~1hr signed URLs (via
+`createSignedUrls`, batched per query) for any row that has one — signed URLs work
+against public buckets too, so this shipped ahead of the flip with no behavior change.
+Before the bucket can actually be made private: (1) `travel-archives` (the separate
+Express app) must be updated to use signed URLs as well, since it reads the same
+bucket, and (2) legacy rows with no `storage_key` need a one-off backfill (derive the
+key from their stored `url`) or their images will 404 once public access is gone.
+The `storage_key` migration itself is still pending because `DATABASE_URL` auth
+currently fails (likely a rotated password) — run `scripts/add-storage-key.js` once fixed.
 
 ## Domain rules (enforced — keep them that way)
 

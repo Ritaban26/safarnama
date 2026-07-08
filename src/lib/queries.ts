@@ -1,5 +1,6 @@
 import "server-only";
 import pool from "./db";
+import supabase, { MEDIA_BUCKET } from "./storage";
 import {
   type User,
   type Trip,
@@ -67,9 +68,36 @@ interface MediaRow {
   uploader_id: number;
   uploader_name: string;
   uploader_role: string;
+  storage_key: string | null;
 }
 
-function toMedia(r: MediaRow): Media {
+const SIGNED_URL_TTL_SECONDS = 60 * 60; // ~1 hour
+
+/**
+ * Batches signed-URL creation into a single storage call per query (not one
+ * per row). Rows without a storage_key (legacy, pre-flip uploads) keep their
+ * stored public url. Signed URLs work against public buckets too, so this is
+ * safe to ship ahead of the private-bucket flip.
+ */
+async function resolveMediaUrls(rows: MediaRow[]): Promise<Map<number, string | null>> {
+  const urlById = new Map<number, string | null>();
+  const keyedRows = rows.filter((r): r is MediaRow & { storage_key: string } => r.storage_key != null);
+  if (keyedRows.length > 0) {
+    const { data } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .createSignedUrls(keyedRows.map((r) => r.storage_key), SIGNED_URL_TTL_SECONDS);
+    keyedRows.forEach((r, i) => {
+      const signed = data?.[i]?.signedUrl;
+      urlById.set(r.id, signed || r.media_url || null);
+    });
+  }
+  for (const r of rows) {
+    if (!urlById.has(r.id)) urlById.set(r.id, r.media_url || null);
+  }
+  return urlById;
+}
+
+function toMedia(r: MediaRow, urlById?: Map<number, string | null>): Media {
   return {
     id: String(r.id),
     tripSlug: r.trip_slug,
@@ -78,10 +106,15 @@ function toMedia(r: MediaRow): Media {
     isPublic: r.is_public,
     caption: r.caption,
     takenAt: formatDay(r.created_at),
-    url: r.media_url || null,
+    url: urlById?.get(r.id) ?? (r.media_url || null),
     variant: variantFor(r.id),
     hue: hueFor(r.id),
   };
+}
+
+async function mapMediaRows(rows: MediaRow[]): Promise<Media[]> {
+  const urlById = await resolveMediaUrls(rows);
+  return rows.map((row) => toMedia(row, urlById));
 }
 
 /** DB check constraint predates this app and uses prose action names. */
@@ -97,6 +130,7 @@ const DB_TO_APPROVAL_TYPE: Record<string, ApprovalType> = Object.fromEntries(
 
 const MEDIA_SELECT = `
   SELECT m.id, m.media_url, m.media_type, m.is_public, m.caption, m.created_at,
+         to_jsonb(m)->>'storage_key' AS storage_key, -- transitional: NULL until scripts/add-storage-key.js has run, then simplify back to m.storage_key
          t.slug AS trip_slug,
          u.id AS uploader_id, u.name AS uploader_name, u.role AS uploader_role
     FROM media m
@@ -113,6 +147,21 @@ export async function getUsers(): Promise<User[]> {
 export async function getUserById(id: number): Promise<User | null> {
   const r = await pool.query("SELECT id, name, role FROM users WHERE id = $1", [id]);
   return r.rows[0] ? toUser(r.rows[0]) : null;
+}
+
+/**
+ * Auth-only lookup: includes password_hash so auth.ts can recompute the
+ * session token-version. Never return this row (or the hash) beyond auth.ts.
+ */
+export async function getUserAuthById(
+  id: number,
+): Promise<{ user: User; passwordHash: string } | null> {
+  const r = await pool.query("SELECT id, name, role, password_hash FROM users WHERE id = $1", [
+    id,
+  ]);
+  const row = r.rows[0];
+  if (!row) return null;
+  return { user: toUser(row), passwordHash: row.password_hash };
 }
 
 /* ---------------- trips ---------------- */
@@ -190,7 +239,7 @@ export async function isTripMember(tripSlug: string, userId: number): Promise<bo
 
 export async function getAllMedia(): Promise<Media[]> {
   const r = await pool.query(`${MEDIA_SELECT} ORDER BY m.id DESC`);
-  return r.rows.map(toMedia);
+  return mapMediaRows(r.rows);
 }
 
 export async function getTripMedia(slug: string, publicOnly = false): Promise<Media[]> {
@@ -198,7 +247,7 @@ export async function getTripMedia(slug: string, publicOnly = false): Promise<Me
     `${MEDIA_SELECT} WHERE t.slug = $1 ${publicOnly ? "AND m.is_public" : ""} ORDER BY m.id DESC`,
     [slug],
   );
-  return r.rows.map(toMedia);
+  return mapMediaRows(r.rows);
 }
 
 /* ---------------- posts ---------------- */
@@ -234,7 +283,8 @@ async function attachPostMedia(rows: PostRow[]): Promise<Post[]> {
   const mediaById = new Map<number, Media>();
   if (ids.length > 0) {
     const r = await pool.query(`${MEDIA_SELECT} WHERE m.id = ANY($1)`, [ids]);
-    for (const row of r.rows) mediaById.set(row.id, toMedia(row));
+    const urlById = await resolveMediaUrls(r.rows);
+    for (const row of r.rows) mediaById.set(row.id, toMedia(row, urlById));
   }
   return rows.map((r) => ({
     slug: r.slug,
@@ -280,7 +330,8 @@ export async function getPendingApprovals(requestedById?: number): Promise<Appro
   const mediaById = new Map<number, Media>();
   if (mediaIds.length > 0) {
     const mr = await pool.query(`${MEDIA_SELECT} WHERE m.id = ANY($1)`, [mediaIds]);
-    for (const row of mr.rows) mediaById.set(row.id, toMedia(row));
+    const urlById = await resolveMediaUrls(mr.rows);
+    for (const row of mr.rows) mediaById.set(row.id, toMedia(row, urlById));
   }
   return r.rows
     .filter((row) => mediaById.has(row.media_id))

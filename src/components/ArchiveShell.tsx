@@ -42,7 +42,7 @@ export default function ArchiveShell({
             </Link>
             {user.role === "admin" && (
               <Link
-                href="/admin"
+                href="/archive/desk"
                 className={`rounded-full px-2.5 py-1.5 transition-colors sm:px-4 sm:py-2 ${
                   active === "admin" ? "bg-ink text-paper" : "text-ink-soft hover:bg-ink/5"
                 }`}
