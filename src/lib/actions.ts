@@ -78,6 +78,30 @@ export async function createMember(_prev: ActionState, formData: FormData): Prom
   return {};
 }
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password"),
+  newPassword: z.string().min(8, "At least 8 characters"),
+});
+
+export async function changePassword(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getSessionUser();
+  if (!user) return { error: "Not signed in" };
+
+  const parsed = changePasswordSchema.safeParse({
+    currentPassword: formData.get("currentPassword"),
+    newPassword: formData.get("newPassword"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const r = await pool.query("SELECT password_hash FROM users WHERE id = $1", [Number(user.id)]);
+  if (!r.rows[0] || !(await bcrypt.compare(parsed.data.currentPassword, r.rows[0].password_hash))) {
+    return { error: "That current password doesn't match." };
+  }
+  const hash = await bcrypt.hash(parsed.data.newPassword, 10);
+  await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [hash, Number(user.id)]);
+  return {};
+}
+
 /* ---------------- uploads ---------------- */
 
 async function requireMembership(tripSlug: string) {
