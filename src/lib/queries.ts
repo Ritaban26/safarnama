@@ -144,11 +144,6 @@ export async function getUsers(): Promise<User[]> {
   return r.rows.map(toUser);
 }
 
-export async function getUserById(id: number): Promise<User | null> {
-  const r = await pool.query("SELECT id, name, role FROM users WHERE id = $1", [id]);
-  return r.rows[0] ? toUser(r.rows[0]) : null;
-}
-
 /**
  * Auth-only lookup: includes password_hash so auth.ts can recompute the
  * session token-version. Never return this row (or the hash) beyond auth.ts.
@@ -224,15 +219,6 @@ export async function getTrips(): Promise<Trip[]> {
 export async function getTripBySlug(slug: string): Promise<Trip | null> {
   const trips = await getTrips();
   return trips.find((t) => t.slug === slug) ?? null;
-}
-
-export async function isTripMember(tripSlug: string, userId: number): Promise<boolean> {
-  const r = await pool.query(
-    `SELECT 1 FROM trip_members tm JOIN trips t ON t.id = tm.trip_id
-      WHERE t.slug = $1 AND tm.user_id = $2`,
-    [tripSlug, userId],
-  );
-  return r.rows.length > 0;
 }
 
 /* ---------------- media ---------------- */

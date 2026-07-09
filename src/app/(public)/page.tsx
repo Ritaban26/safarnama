@@ -5,7 +5,7 @@ import SiteNav from "@/components/SiteNav";
 import SiteFooter from "@/components/SiteFooter";
 import SmoothScrollHome from "@/components/motion/SmoothScrollHome";
 import { Eyebrow, AvatarStack, Badge } from "@/components/ui";
-import { IconArrow, IconLock, IconGlobe, IconFeather, IconCamera } from "@/components/icons";
+import { IconArrow, IconFeather, IconCamera } from "@/components/icons";
 import { getTrips, getAllMedia, getPosts } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -169,13 +169,11 @@ export default async function Home() {
             <p className="reveal d2 mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
               For years our trips lived in a shared folder — buried, unsorted,
               quality be damned. Safarnama replaces it with something built to
-              last: behind the curtain, we keep <strong className="text-ink">everything</strong>.
-              Out front, an editor curates only the photographs and stories worth
-              printing.
+              last: a magazine where an editor prints only{" "}
+              <strong className="text-ink">the photographs and stories worth keeping</strong>.
             </p>
             <div className="reveal d3 mt-8 flex flex-wrap gap-3">
-              <Badge tone="moss"><IconLock className="h-3.5 w-3.5" /> Private by default</Badge>
-              <Badge tone="ember"><IconGlobe className="h-3.5 w-3.5" /> Public by approval</Badge>
+              <Badge tone="ember"><IconCamera className="h-3.5 w-3.5" /> Every frame chosen</Badge>
               <Badge tone="gold"><IconFeather className="h-3.5 w-3.5" /> Stories by those who were there</Badge>
             </div>
           </div>
@@ -313,101 +311,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ============ two worlds — reveal + underline draw + soot ============ */}
-      <section className="relative overflow-hidden bg-dusk-deep py-24 text-paper sm:py-32">
-        <div aria-hidden className="absolute inset-0 opacity-60">
-          {[[6, 18], [16, 70], [28, 30], [44, 12], [56, 75], [68, 22], [82, 60], [92, 26]].map(
-            ([x, y], i) => (
-              <span
-                key={i}
-                className="absolute h-1 w-1 rounded-full bg-paper/70"
-                style={{ left: `${x}%`, top: `${y}%` }}
-              />
-            )
-          )}
-        </div>
-        <div
-          aria-hidden
-          data-parallax="0.4"
-          className="flicker absolute -bottom-40 left-1/2 h-120 w-120 -translate-x-1/2 rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(242,168,92,0.35) 0%, rgba(242,168,92,0) 65%)" }}
-        />
-        {[[12, 30], [26, 58], [80, 40], [90, 64]].map(([x, y], i) => (
-          <span
-            key={i}
-            data-soot
-            aria-hidden
-            className="soot"
-            style={{ left: `${x}%`, top: `${y}%`, width: `${9 + i * 3}px`, height: `${9 + i * 3}px` }}
-          />
-        ))}
-        <div className="relative mx-auto w-full max-w-6xl px-6">
-          <div className="reveal mx-auto max-w-2xl text-center">
-            <Eyebrow light>How it works</Eyebrow>
-            <h2 className="mt-3 font-display text-4xl font-semibold tracking-tight sm:text-5xl">
-              Two worlds, one hearth —{" "}
-              <span className="underline-wrap relative inline-block">
-                for everyone
-                <svg
-                  aria-hidden
-                  viewBox="0 0 220 10"
-                  preserveAspectRatio="none"
-                  className="absolute -bottom-1 left-0 h-2.5 w-full overflow-visible"
-                >
-                  <path
-                    d="M3 7 Q 55 1 110 5 T 217 4"
-                    fill="none"
-                    stroke="var(--color-ember)"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
-            </h2>
-            <p className="mt-6 text-lg leading-relaxed text-paper/75">
-              Inside the circle, total transparency. Outside it, total intention.
-              Nothing crosses the boundary without the editor&apos;s hand.
-            </p>
-          </div>
-          <div className="mt-14 grid gap-6 lg:grid-cols-3">
-            <div className="reveal d1 rounded-3xl border border-white/12 bg-white/6 p-7 backdrop-blur-sm">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-moss text-paper">
-                <IconLock className="h-6 w-6" />
-              </span>
-              <h3 className="mt-4 font-display text-2xl font-semibold">The private archive</h3>
-              <p className="mt-2.5 leading-relaxed text-paper/70">
-                Members upload everything from their trips — the masterpieces and
-                the blurry disasters alike. Within a trip, everyone sees everything.
-              </p>
-              <p className="mt-3 font-hand text-xl text-gold/90">{media.length} memories and counting</p>
-            </div>
-            <div className="reveal d2 rounded-3xl border border-gold/40 bg-gold/8 p-7 backdrop-blur-sm lg:-translate-y-3">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ember text-paper">
-                <IconFeather className="h-6 w-6" />
-              </span>
-              <h3 className="mt-4 font-display text-2xl font-semibold">The editor&apos;s desk</h3>
-              <p className="mt-2.5 leading-relaxed text-paper/70">
-                Want a photo on the public page? You pitch it. Every publish,
-                retraction, and deletion of public work passes one editor&apos;s
-                deliberate yes.
-              </p>
-              <p className="mt-3 font-hand text-xl text-gold/90">contributors pitch, the editor prints</p>
-            </div>
-            <div className="reveal d3 rounded-3xl border border-white/12 bg-white/6 p-7 backdrop-blur-sm">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-sky text-dusk-deep">
-                <IconGlobe className="h-6 w-6" />
-              </span>
-              <h3 className="mt-4 font-display text-2xl font-semibold">The public face</h3>
-              <p className="mt-2.5 leading-relaxed text-paper/70">
-                Curated galleries and first-person stories — the highlight reel we
-                are proud to show the world, with everything else kept safe behind it.
-              </p>
-              <p className="mt-3 font-hand text-xl text-gold/90">you are here ✦</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ============ journal — reveal grid ============ */}
       <section className="relative overflow-hidden bg-paper py-24 sm:py-28">
         <div
@@ -468,31 +371,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ============ enter + footer ============ */}
-      <section className="bg-paper">
-        <div className="mx-auto flex w-full max-w-6xl items-center px-6 py-20">
-          <div className="reveal relative w-full overflow-hidden rounded-4xl bg-moss-deep text-paper shadow-lift">
-            <div className="absolute inset-0 opacity-50">
-              <PaintedScene variant="meadow" />
-            </div>
-            <div className="absolute inset-0 bg-linear-to-r from-moss-deep via-moss-deep/80 to-transparent" />
-            <div className="relative max-w-xl px-10 py-14 sm:px-14">
-              <p className="font-hand text-2xl text-gold">were you there?</p>
-              <h2 className="mt-2 font-display text-4xl font-semibold tracking-tight sm:text-5xl">
-                The circle keeps everything.
-              </h2>
-              <p className="mt-4 text-lg leading-relaxed text-paper/85">
-                Members can step behind the curtain — every photo, every video,
-                every trip you were part of, ready to relive and download.
-              </p>
-              <p className="mt-7 inline-flex items-center gap-2.5 font-hand text-xl text-gold">
-                by invitation only
-              </p>
-            </div>
-          </div>
-        </div>
-        <SiteFooter />
-      </section>
+      {/* ============ footer ============ */}
+      <SiteFooter />
     </SmoothScrollHome>
   );
 }

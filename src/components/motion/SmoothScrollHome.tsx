@@ -121,11 +121,6 @@ export default function SmoothScrollHome({ children }: { children: React.ReactNo
     );
     q(".reveal").forEach((el) => io.observe(el));
 
-    // ---- SVG underline: feed measured path length to CSS ----
-    q<SVGPathElement>(".underline-wrap path").forEach((p) => {
-      p.style.setProperty("--len", `${p.getTotalLength()}`);
-    });
-
     // ---- idle soot sprites (WAAPI, kept out of the scroll loop) ----
     const sootAnims: Animation[] = [];
     if (!reduced) {

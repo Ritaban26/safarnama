@@ -6,7 +6,7 @@ import SiteNav from "@/components/SiteNav";
 import SiteFooter from "@/components/SiteFooter";
 import Reveal from "@/components/motion/Reveal";
 import { Eyebrow, Avatar, WaveDivider } from "@/components/ui";
-import { IconArrow, IconLock, IconCamera, IconUsers, IconClock } from "@/components/icons";
+import { IconArrow, IconCamera, IconUsers, IconClock } from "@/components/icons";
 import { getTrips, getTripMedia, getPosts } from "@/lib/queries";
 import type { Trip } from "@/lib/data";
 
@@ -22,9 +22,8 @@ export default async function TripPage({
   const trip = trips.find((t) => t.slug === slug);
   if (!trip) notFound();
 
-  const [all, stories] = await Promise.all([getTripMedia(slug), getPosts(slug)]);
-  const gallery = all.filter((m) => m.isPublic);
-  const privateCount = all.length - gallery.length;
+  const [media, stories] = await Promise.all([getTripMedia(slug), getPosts(slug)]);
+  const gallery = media.filter((m) => m.isPublic);
 
   return (
     <div className="bg-paper">
@@ -107,7 +106,7 @@ export default async function TripPage({
               </h2>
             </div>
             <p className="font-hand text-xl text-ink-soft">
-              {gallery.length} of {all.length} frames made the page
+              {gallery.length} frames made the page
             </p>
           </div>
 
@@ -126,18 +125,6 @@ export default async function TripPage({
                 </Reveal>
               );
             })}
-          </div>
-
-          {/* private teaser */}
-          <div className="mt-12 flex flex-col items-center gap-4 rounded-3xl border border-dashed border-ink/20 bg-paper/60 px-8 py-10 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-full bg-ink/8 text-ink-soft">
-              <IconLock className="h-6 w-6" />
-            </span>
-            <p className="max-w-md leading-relaxed text-ink-soft">
-              <strong className="text-ink">{privateCount} more memories</strong> from this
-              trip live in the private archive — visible only to the {trip.members.length}{" "}
-              people who were there.
-            </p>
           </div>
         </div>
       </section>

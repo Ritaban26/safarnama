@@ -1,13 +1,9 @@
 import type { User } from "@/lib/data";
 
 /** Small Karla eyebrow label above section titles */
-export function Eyebrow({ children, light = false }: { children: React.ReactNode; light?: boolean }) {
+export function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p
-      className={`text-xs font-semibold uppercase tracking-[0.22em] ${
-        light ? "text-gold" : "text-ember"
-      }`}
-    >
+    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-ember">
       {children}
     </p>
   );

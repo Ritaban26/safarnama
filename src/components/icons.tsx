@@ -87,13 +87,6 @@ export const IconCamera = ({ className }: { className?: string }) => (
   </Base>
 );
 
-export const IconLeaf = ({ className }: { className?: string }) => (
-  <Base className={className}>
-    <path d="M5 19c0-8 5-13 14-14 .5 9-4 14-12 14" />
-    <path d="M5 19c3-5 7-8 11-9" />
-  </Base>
-);
-
 export const IconCompass = ({ className }: { className?: string }) => (
   <Base className={className}>
     <circle cx="12" cy="12" r="9" />
