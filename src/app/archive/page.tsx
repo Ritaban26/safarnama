@@ -144,7 +144,7 @@ export default async function ArchivePage() {
                   </span>
                 </div>
                 <p className="mt-3 font-hand text-lg leading-snug text-ink-soft">
-                  “{r.media.caption || "untitled frame"}”
+                  “{r.media ? r.media.caption || "untitled frame" : r.post?.title}”
                 </p>
                 {r.note && <p className="mt-2 text-sm leading-relaxed text-ink-faint">{r.note}</p>}
                 <p className="mt-3 text-xs font-semibold uppercase tracking-[0.15em] text-gold">

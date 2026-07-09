@@ -264,12 +264,13 @@ export async function requestApproval(
 export async function decideApproval(
   requestId: string,
   decision: "approved" | "rejected",
+  note?: string,
 ): Promise<ActionState> {
   const user = await getSessionUser();
   if (user?.role !== "admin") return { error: "Only the editor decides." };
 
   const r = await pool.query(
-    "SELECT id, media_id, action_type FROM approval_requests WHERE id = $1 AND status = 'pending'",
+    "SELECT id, media_id, post_id, action_type FROM approval_requests WHERE id = $1 AND status = 'pending'",
     [Number(requestId)],
   );
   const req = r.rows[0];
@@ -289,12 +290,226 @@ export async function decideApproval(
       );
       await pool.query("DELETE FROM media WHERE id = $1", [req.media_id]);
       if (m.rows[0]) await storageRemove(m.rows[0].media_url, m.rows[0].storage_key);
+    } else if (req.action_type === APPROVAL_TYPE_TO_DB.publish_post) {
+      await pool.query("UPDATE posts SET status = 'published' WHERE id = $1", [req.post_id]);
+    } else if (req.action_type === APPROVAL_TYPE_TO_DB.retract_post) {
+      await pool.query("UPDATE posts SET status = 'draft' WHERE id = $1", [req.post_id]);
+    } else if (req.action_type === APPROVAL_TYPE_TO_DB.delete_post) {
+      await pool.query(
+        "UPDATE approval_requests SET status = 'rejected' WHERE post_id = $1 AND status = 'pending' AND id <> $2",
+        [req.post_id, req.id],
+      );
+      await pool.query("DELETE FROM posts WHERE id = $1", [req.post_id]);
     }
+  } else if (decision === "rejected" && req.action_type === APPROVAL_TYPE_TO_DB.publish_post) {
+    // revert to draft so the author can revise and resubmit
+    await pool.query("UPDATE posts SET status = 'draft' WHERE id = $1", [req.post_id]);
   }
-  await pool.query("UPDATE approval_requests SET status = $1 WHERE id = $2", [decision, req.id]);
+  await pool.query("UPDATE approval_requests SET status = $1, admin_note = $2 WHERE id = $3", [
+    decision,
+    z.string().trim().max(300).catch("").parse(note ?? "") || null,
+    req.id,
+  ]);
   revalidatePath("/archive/desk");
   revalidatePath("/archive");
   revalidatePath("/");
+  return {};
+}
+
+/* ---------------- stories ---------------- */
+
+const postFieldsSchema = z.object({
+  title: z.string().trim().min(2, "Give it a title"),
+  excerpt: z.string().trim().min(1, "A short excerpt helps readers"),
+  paragraphs: z.array(z.string().trim().min(1)).min(1, "Write at least one paragraph"),
+  mediaId: z.string().optional(),
+});
+
+function slugifyTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function paragraphsFromFormData(formData: FormData): string[] {
+  return formData
+    .getAll("paragraphs")
+    .map((p) => (typeof p === "string" ? p.trim() : ""))
+    .filter((p) => p.length > 0);
+}
+
+async function assertMediaBelongsToTrip(mediaId: string | undefined, tripId: number): Promise<string | null> {
+  if (!mediaId) return null;
+  const r = await pool.query("SELECT id FROM media WHERE id = $1 AND trip_id = $2", [
+    Number(mediaId),
+    tripId,
+  ]);
+  if (!r.rows[0]) return "That photo isn't part of this trip.";
+  return null;
+}
+
+export async function createDraftPost(
+  tripSlug: string,
+  formData: FormData,
+): Promise<ActionState & { slug?: string }> {
+  const { user, tripId } = await requireMembership(tripSlug);
+
+  const parsed = postFieldsSchema.safeParse({
+    title: formData.get("title"),
+    excerpt: formData.get("excerpt"),
+    paragraphs: paragraphsFromFormData(formData),
+    mediaId: formData.get("mediaId") ?? undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const mediaError = await assertMediaBelongsToTrip(parsed.data.mediaId, tripId);
+  if (mediaError) return { error: mediaError };
+
+  const slugBase = slugifyTitle(parsed.data.title);
+  const dupe = await pool.query("SELECT 1 FROM posts WHERE slug = $1", [slugBase]);
+  const slug = dupe.rows[0] ? `${slugBase}-${Date.now().toString(36)}` : slugBase;
+
+  await pool.query(
+    `INSERT INTO posts (slug, title, excerpt, paragraphs, trip_id, author_id, media_id, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft')`,
+    [
+      slug,
+      parsed.data.title,
+      parsed.data.excerpt,
+      parsed.data.paragraphs,
+      tripId,
+      Number(user.id),
+      parsed.data.mediaId ? Number(parsed.data.mediaId) : null,
+    ],
+  );
+  revalidatePath(`/archive/${tripSlug}`);
+  revalidatePath(`/archive/${tripSlug}/write`);
+  return { slug };
+}
+
+export async function updatePost(
+  tripSlug: string,
+  postSlug: string,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await getSessionUser();
+  if (!user) return { error: "Not signed in" };
+
+  const existing = await pool.query(
+    "SELECT id, author_id, status, trip_id FROM posts WHERE slug = $1",
+    [postSlug],
+  );
+  const post = existing.rows[0];
+  if (!post) return { error: "That story no longer exists." };
+  if (post.author_id !== Number(user.id)) return { error: "Only the author can edit this story." };
+  if (post.status === "published") {
+    return { error: "Published stories can't be edited directly — retract it first." };
+  }
+
+  const parsed = postFieldsSchema.safeParse({
+    title: formData.get("title"),
+    excerpt: formData.get("excerpt"),
+    paragraphs: paragraphsFromFormData(formData),
+    mediaId: formData.get("mediaId") ?? undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const mediaError = await assertMediaBelongsToTrip(parsed.data.mediaId, post.trip_id);
+  if (mediaError) return { error: mediaError };
+
+  await pool.query(
+    "UPDATE posts SET title = $1, excerpt = $2, paragraphs = $3, media_id = $4 WHERE id = $5",
+    [
+      parsed.data.title,
+      parsed.data.excerpt,
+      parsed.data.paragraphs,
+      parsed.data.mediaId ? Number(parsed.data.mediaId) : null,
+      post.id,
+    ],
+  );
+  revalidatePath(`/archive/${tripSlug}`);
+  revalidatePath(`/archive/${tripSlug}/write`);
+  return {};
+}
+
+export async function deleteDraftPost(postSlug: string): Promise<ActionState> {
+  const user = await getSessionUser();
+  if (!user) return { error: "Not signed in" };
+
+  const r = await pool.query(
+    "SELECT id FROM posts WHERE slug = $1 AND author_id = $2 AND status IN ('draft', 'pending')",
+    [postSlug, Number(user.id)],
+  );
+  if (!r.rows[0]) return { error: "Only your own unpublished stories can be deleted directly." };
+
+  await pool.query("DELETE FROM approval_requests WHERE post_id = $1", [r.rows[0].id]);
+  await pool.query("DELETE FROM posts WHERE id = $1", [r.rows[0].id]);
+  revalidatePath("/archive");
+  return {};
+}
+
+export async function submitPostForApproval(postSlug: string, note: string): Promise<ActionState> {
+  const user = await getSessionUser();
+  if (!user) return { error: "Not signed in" };
+
+  const r = await pool.query(
+    "SELECT id FROM posts WHERE slug = $1 AND author_id = $2 AND status = 'draft'",
+    [postSlug, Number(user.id)],
+  );
+  if (!r.rows[0]) return { error: "Only your own draft stories can be pitched." };
+
+  const dupe = await pool.query(
+    "SELECT 1 FROM approval_requests WHERE post_id = $1 AND status = 'pending'",
+    [r.rows[0].id],
+  );
+  if (dupe.rows[0]) return { error: "This one is already waiting on the editor." };
+
+  await pool.query("UPDATE posts SET status = 'pending' WHERE id = $1", [r.rows[0].id]);
+  await pool.query(
+    `INSERT INTO approval_requests (post_id, action_type, requested_by, status, note)
+     VALUES ($1, $2, $3, 'pending', $4)`,
+    [
+      r.rows[0].id,
+      APPROVAL_TYPE_TO_DB.publish_post,
+      Number(user.id),
+      z.string().trim().max(300).catch("").parse(note),
+    ],
+  );
+  revalidatePath("/archive");
+  revalidatePath("/archive/desk");
+  return {};
+}
+
+export async function requestPostApproval(
+  postSlug: string,
+  type: "retract_post" | "delete_post",
+  note: string,
+): Promise<ActionState> {
+  const user = await getSessionUser();
+  if (!user) return { error: "Not signed in" };
+
+  const r = await pool.query(
+    "SELECT id FROM posts WHERE slug = $1 AND author_id = $2 AND status = 'published'",
+    [postSlug, Number(user.id)],
+  );
+  if (!r.rows[0]) return { error: "Only your own published stories can be pitched." };
+
+  const dupe = await pool.query(
+    "SELECT 1 FROM approval_requests WHERE post_id = $1 AND status = 'pending'",
+    [r.rows[0].id],
+  );
+  if (dupe.rows[0]) return { error: "This one is already waiting on the editor." };
+
+  await pool.query(
+    `INSERT INTO approval_requests (post_id, action_type, requested_by, status, note)
+     VALUES ($1, $2, $3, 'pending', $4)`,
+    [
+      r.rows[0].id,
+      APPROVAL_TYPE_TO_DB[type],
+      Number(user.id),
+      z.string().trim().max(300).catch("").parse(note),
+    ],
+  );
+  revalidatePath("/archive");
+  revalidatePath("/archive/desk");
   return {};
 }
 

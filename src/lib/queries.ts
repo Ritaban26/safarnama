@@ -6,6 +6,7 @@ import {
   type Trip,
   type Media,
   type Post,
+  type PostStatus,
   type ApprovalRequest,
   type ApprovalType,
   initialsOf,
@@ -122,6 +123,9 @@ export const APPROVAL_TYPE_TO_DB: Record<ApprovalType, string> = {
   make_public: "mark as public",
   retract_public: "retract public status",
   delete_public: "delete public photo",
+  publish_post: "publish story",
+  retract_post: "retract published story",
+  delete_post: "delete published story",
 };
 
 const DB_TO_APPROVAL_TYPE: Record<string, ApprovalType> = Object.fromEntries(
@@ -239,7 +243,7 @@ export async function getTripMedia(slug: string, publicOnly = false): Promise<Me
 /* ---------------- posts ---------------- */
 
 const POST_SELECT = `
-  SELECT p.slug, p.title, p.excerpt, p.paragraphs, p.created_at,
+  SELECT p.id, p.slug, p.title, p.excerpt, p.paragraphs, p.created_at, p.status,
          t.slug AS trip_slug, t.name AS trip_name, t.location AS trip_location,
          u.id AS author_id, u.name AS author_name, u.role AS author_role,
          p.media_id
@@ -249,12 +253,20 @@ const POST_SELECT = `
 
 const POST_DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" });
 
+const POST_STATUSES: readonly PostStatus[] = ["draft", "pending", "published"];
+
+function toPostStatus(status: string): PostStatus {
+  return (POST_STATUSES as readonly string[]).includes(status) ? (status as PostStatus) : "published";
+}
+
 interface PostRow {
+  id: number;
   slug: string;
   title: string;
   excerpt: string;
   paragraphs: string[];
   created_at: Date | null;
+  status: string;
   trip_slug: string;
   trip_name: string;
   trip_location: string;
@@ -283,17 +295,38 @@ async function attachPostMedia(rows: PostRow[]): Promise<Post[]> {
     date: r.created_at ? POST_DATE.format(r.created_at) : "",
     excerpt: r.excerpt,
     paragraphs: r.paragraphs ?? [],
+    status: toPostStatus(r.status),
   }));
 }
 
 export async function getPosts(tripSlug?: string): Promise<Post[]> {
   const r = tripSlug
-    ? await pool.query(`${POST_SELECT} WHERE t.slug = $1 ORDER BY p.created_at DESC`, [tripSlug])
-    : await pool.query(`${POST_SELECT} ORDER BY p.created_at DESC`);
+    ? await pool.query(
+        `${POST_SELECT} WHERE t.slug = $1 AND p.status = 'published' ORDER BY p.created_at DESC`,
+        [tripSlug],
+      )
+    : await pool.query(`${POST_SELECT} WHERE p.status = 'published' ORDER BY p.created_at DESC`);
   return attachPostMedia(r.rows);
 }
 
 export async function getPost(slug: string): Promise<Post | null> {
+  const r = await pool.query(`${POST_SELECT} WHERE p.slug = $1 AND p.status = 'published'`, [slug]);
+  if (!r.rows[0]) return null;
+  const [post] = await attachPostMedia(r.rows);
+  return post;
+}
+
+/** Any status (draft/pending/published) for a single author within a trip — used by the authoring UI. */
+export async function getMyPostsForTrip(tripSlug: string, authorId: number): Promise<Post[]> {
+  const r = await pool.query(
+    `${POST_SELECT} WHERE t.slug = $1 AND p.author_id = $2 ORDER BY p.created_at DESC`,
+    [tripSlug, authorId],
+  );
+  return attachPostMedia(r.rows);
+}
+
+/** Any status — for the edit/authoring action, which does its own ownership check. */
+export async function getPostForEdit(slug: string): Promise<Post | null> {
   const r = await pool.query(`${POST_SELECT} WHERE p.slug = $1`, [slug]);
   if (!r.rows[0]) return null;
   const [post] = await attachPostMedia(r.rows);
@@ -304,7 +337,7 @@ export async function getPost(slug: string): Promise<Post | null> {
 
 export async function getPendingApprovals(requestedById?: number): Promise<ApprovalRequest[]> {
   const r = await pool.query(
-    `SELECT ar.id, ar.action_type, ar.note, ar.created_at, ar.media_id,
+    `SELECT ar.id, ar.action_type, ar.note, ar.created_at, ar.media_id, ar.post_id,
             u.id AS requester_id, u.name AS requester_name, u.role AS requester_role
        FROM approval_requests ar
        JOIN users u ON u.id = ar.requested_by
@@ -312,19 +345,27 @@ export async function getPendingApprovals(requestedById?: number): Promise<Appro
       ORDER BY ar.created_at DESC`,
     requestedById != null ? [requestedById] : [],
   );
-  const mediaIds = r.rows.map((row) => row.media_id);
+  const mediaIds = r.rows.map((row) => row.media_id).filter((id): id is number => id != null);
   const mediaById = new Map<number, Media>();
   if (mediaIds.length > 0) {
     const mr = await pool.query(`${MEDIA_SELECT} WHERE m.id = ANY($1)`, [mediaIds]);
     const urlById = await resolveMediaUrls(mr.rows);
     for (const row of mr.rows) mediaById.set(row.id, toMedia(row, urlById));
   }
+  const postIds = r.rows.map((row) => row.post_id).filter((id): id is number => id != null);
+  const postById = new Map<number, Post>();
+  if (postIds.length > 0) {
+    const pr = await pool.query(`${POST_SELECT} WHERE p.id = ANY($1)`, [postIds]);
+    const posts = await attachPostMedia(pr.rows);
+    pr.rows.forEach((row, i) => postById.set(row.id, posts[i]));
+  }
   return r.rows
-    .filter((row) => mediaById.has(row.media_id))
+    .filter((row) => (row.media_id != null && mediaById.has(row.media_id)) || (row.post_id != null && postById.has(row.post_id)))
     .map((row) => ({
       id: String(row.id),
       type: DB_TO_APPROVAL_TYPE[row.action_type] ?? "make_public",
-      media: mediaById.get(row.media_id)!,
+      media: row.media_id != null ? mediaById.get(row.media_id) ?? null : null,
+      post: row.post_id != null ? postById.get(row.post_id) ?? null : null,
       requestedBy: toUser({ id: row.requester_id, name: row.requester_name, role: row.requester_role }),
       requestedAt: formatAgo(row.created_at),
       note: row.note,
@@ -334,11 +375,23 @@ export async function getPendingApprovals(requestedById?: number): Promise<Appro
 /** media ids (as strings) that have a pending request, for badge display */
 export async function getPendingMediaIds(): Promise<Record<string, ApprovalType>> {
   const r = await pool.query(
-    "SELECT media_id, action_type FROM approval_requests WHERE status = 'pending'",
+    "SELECT media_id, action_type FROM approval_requests WHERE status = 'pending' AND media_id IS NOT NULL",
   );
   const map: Record<string, ApprovalType> = {};
   for (const row of r.rows) {
     map[String(row.media_id)] = DB_TO_APPROVAL_TYPE[row.action_type] ?? "make_public";
+  }
+  return map;
+}
+
+/** post ids (as strings) that have a pending request, for badge display */
+export async function getPendingPostIds(): Promise<Record<string, ApprovalType>> {
+  const r = await pool.query(
+    "SELECT post_id, action_type FROM approval_requests WHERE status = 'pending' AND post_id IS NOT NULL",
+  );
+  const map: Record<string, ApprovalType> = {};
+  for (const row of r.rows) {
+    map[String(row.post_id)] = DB_TO_APPROVAL_TYPE[row.action_type] ?? "make_public";
   }
   return map;
 }

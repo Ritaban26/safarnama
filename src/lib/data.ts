@@ -45,6 +45,8 @@ export interface Trip {
   members: User[];
 }
 
+export type PostStatus = "draft" | "pending" | "published";
+
 export interface Post {
   slug: string;
   title: string;
@@ -56,14 +58,22 @@ export interface Post {
   date: string;
   excerpt: string;
   paragraphs: string[];
+  status: PostStatus;
 }
 
-export type ApprovalType = "make_public" | "retract_public" | "delete_public";
+export type ApprovalType =
+  | "make_public"
+  | "retract_public"
+  | "delete_public"
+  | "publish_post"
+  | "retract_post"
+  | "delete_post";
 
 export interface ApprovalRequest {
   id: string;
   type: ApprovalType;
-  media: Media;
+  media: Media | null;
+  post: Post | null;
   requestedBy: User;
   requestedAt: string;
   note: string;
@@ -73,6 +83,9 @@ export const approvalLabel: Record<ApprovalType, string> = {
   make_public: "Publish to public gallery",
   retract_public: "Retract from public gallery",
   delete_public: "Delete a public photo",
+  publish_post: "Publish a story",
+  retract_post: "Retract a published story",
+  delete_post: "Delete a published story",
 };
 
 /* ------- deterministic display derivations (no DB columns needed) ------- */

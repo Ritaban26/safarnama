@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import PaintedScene from "@/components/PaintedScene";
 import { MediaFrame } from "@/components/PhotoCard";
 import { Badge, Avatar } from "@/components/ui";
@@ -13,6 +14,7 @@ import {
   IconTrash,
   IconClock,
   IconCheck,
+  IconFeather,
 } from "@/components/icons";
 import {
   uploadMedia,
@@ -93,14 +95,23 @@ export default function PrivateTripView({
               {pendingCount} pitches pending
             </p>
           </div>
-          <button
-            onClick={() => fileInput.current?.click()}
-            disabled={busy}
-            className="group inline-flex cursor-pointer items-center gap-2.5 rounded-full bg-ember px-6 py-3 font-semibold text-paper shadow-lift transition-colors hover:bg-ember-deep disabled:opacity-60"
-          >
-            <IconUpload className="h-5 w-5 transition-transform duration-200 group-hover:-translate-y-0.5" />
-            {busy ? "Filing…" : "Add memories"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href={`/archive/${trip.slug}/write`}
+              className="group inline-flex cursor-pointer items-center gap-2.5 rounded-full border border-paper/40 px-6 py-3 font-semibold text-paper transition-colors hover:bg-paper/10"
+            >
+              <IconFeather className="h-5 w-5" />
+              Write a story
+            </Link>
+            <button
+              onClick={() => fileInput.current?.click()}
+              disabled={busy}
+              className="group inline-flex cursor-pointer items-center gap-2.5 rounded-full bg-ember px-6 py-3 font-semibold text-paper shadow-lift transition-colors hover:bg-ember-deep disabled:opacity-60"
+            >
+              <IconUpload className="h-5 w-5 transition-transform duration-200 group-hover:-translate-y-0.5" />
+              {busy ? "Filing…" : "Add memories"}
+            </button>
+          </div>
         </div>
       </section>
 

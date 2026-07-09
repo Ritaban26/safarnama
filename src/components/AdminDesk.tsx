@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import PaintedScene from "@/components/PaintedScene";
 import { MediaFrame } from "@/components/PhotoCard";
 import { Badge, Avatar } from "@/components/ui";
-import { IconCheck, IconX, IconGlobe, IconLock, IconTrash, IconClock, IconCamera } from "@/components/icons";
+import { IconCheck, IconX, IconGlobe, IconLock, IconTrash, IconClock, IconCamera, IconFeather } from "@/components/icons";
 import { decideApproval, createTrip, updateTrip, createMember, type ActionState } from "@/lib/actions";
 import {
   approvalLabel,
@@ -19,6 +19,18 @@ const TYPE_ICON: Record<ApprovalType, React.ReactNode> = {
   make_public: <IconGlobe className="h-3.5 w-3.5" />,
   retract_public: <IconLock className="h-3.5 w-3.5" />,
   delete_public: <IconTrash className="h-3.5 w-3.5" />,
+  publish_post: <IconFeather className="h-3.5 w-3.5" />,
+  retract_post: <IconLock className="h-3.5 w-3.5" />,
+  delete_post: <IconTrash className="h-3.5 w-3.5" />,
+};
+
+const TYPE_TONE: Record<ApprovalType, "moss" | "dusk" | "ember"> = {
+  make_public: "moss",
+  retract_public: "dusk",
+  delete_public: "ember",
+  publish_post: "moss",
+  retract_post: "dusk",
+  delete_post: "ember",
 };
 
 /** The editor's desk: every public-facing action waits here for a yes or a no. */
@@ -98,6 +110,7 @@ export default function AdminDesk({
           )}
           {requests.map((r) => {
             const m = r.media;
+            const p = r.post;
             return (
               <article
                 key={r.id}
@@ -106,23 +119,42 @@ export default function AdminDesk({
                 <div className="photo-card relative -rotate-1 rounded-sm">
                   <span aria-hidden className="tape" />
                   <div className="relative aspect-[4/3] overflow-hidden rounded-[3px]">
-                    <MediaFrame item={m} />
+                    {m ? (
+                      <MediaFrame item={m} />
+                    ) : p?.media ? (
+                      <MediaFrame item={p.media} />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center bg-ink/8">
+                        <IconFeather className="h-8 w-8 text-ink-soft" />
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={r.type === "make_public" ? "moss" : r.type === "retract_public" ? "dusk" : "ember"}>
+                    <Badge tone={TYPE_TONE[r.type]}>
                       {TYPE_ICON[r.type]} {approvalLabel[r.type]}
                     </Badge>
                     <span className="inline-flex items-center gap-1.5 text-xs text-ink-faint">
                       <IconClock className="h-3.5 w-3.5" /> {r.requestedAt}
                     </span>
                   </div>
-                  <p className="mt-3 font-display text-xl font-semibold leading-snug">
-                    “{m.caption || "untitled frame"}”
-                  </p>
-                  <p className="mt-1 text-sm text-ink-faint">{m.takenAt}</p>
+                  {m ? (
+                    <>
+                      <p className="mt-3 font-display text-xl font-semibold leading-snug">
+                        “{m.caption || "untitled frame"}”
+                      </p>
+                      <p className="mt-1 text-sm text-ink-faint">{m.takenAt}</p>
+                    </>
+                  ) : p ? (
+                    <>
+                      <p className="mt-3 font-display text-xl font-semibold leading-snug">
+                        “{p.title}”
+                      </p>
+                      <p className="mt-1 text-sm text-ink-faint line-clamp-2">{p.excerpt}</p>
+                    </>
+                  ) : null}
                   <p className="mt-3 flex items-center gap-2 text-sm text-ink-soft">
                     <Avatar user={r.requestedBy} size="h-6 w-6 text-[0.6rem]" />
                     <span>
