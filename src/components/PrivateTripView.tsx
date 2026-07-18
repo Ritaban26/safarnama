@@ -44,9 +44,9 @@ export default function PrivateTripView({
   const [toast, setToast] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
 
-  const say = (msg: string) => {
+  const say = (msg: string, ms = 3600) => {
     setToast(msg);
-    window.setTimeout(() => setToast(null), 3600);
+    window.setTimeout(() => setToast(null), ms);
   };
 
   const run = (work: () => Promise<{ error?: string }>, okMsg: string) =>
@@ -58,14 +58,27 @@ export default function PrivateTripView({
 
   const onFilesPicked = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const fd = new FormData();
-    for (const f of Array.from(files)) fd.append("files", f);
+    const picked = Array.from(files);
     const caption = window.prompt("A line for the caption? (optional)") ?? "";
-    fd.set("caption", caption);
-    run(
-      () => uploadMedia(trip.slug, fd),
-      "Uploaded — visible to everyone on this trip, private to the world.",
-    );
+    startTransition(async () => {
+      const failures: string[] = [];
+      for (const f of picked) {
+        const fd = new FormData();
+        fd.set("file", f);
+        fd.set("caption", caption);
+        const res = await uploadMedia(trip.slug, fd);
+        if (res.error) failures.push(res.error);
+      }
+      if (failures.length === 0) {
+        say("Uploaded — visible to everyone on this trip, private to the world.");
+      } else {
+        say(
+          `${picked.length - failures.length} of ${picked.length} uploaded. ${failures.join(" ")}`,
+          9000,
+        );
+      }
+      router.refresh();
+    });
   };
 
   const pitch = (m: Media, type: ApprovalType, okMsg: string) => {
